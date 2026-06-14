@@ -27,6 +27,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Aria yig'ilmoqda..." -ForegroundColor Cyan
 & $py -m PyInstaller `
     --noconfirm `
+    --clean `
     --onefile `
     --noconsole `
     --name Aria `

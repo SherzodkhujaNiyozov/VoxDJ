@@ -2,6 +2,7 @@
 foydalanuvchi ma'lumotlari %APPDATA%/Aria da, modellar esa proekt yonidagi models/ da."""
 
 import os
+import sys
 from pathlib import Path
 
 from . import APP_NAME
@@ -11,8 +12,12 @@ APPDATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / APP_NAME
 CONFIG_PATH = APPDATA_DIR / "config.json"
 VOICEPRINT_PATH = APPDATA_DIR / "voiceprint.json"
 
-# Proekt ildizi (.../Aria) va modellar papkasi
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Proekt ildizi (.../Aria) va modellar papkasi.
+# PyInstaller onefile buildida tashqi models/ papkasi .exe yonida turadi.
+if getattr(sys, "frozen", False):
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 
 # Vosk modellari (download_models.py yuklab oladi)
