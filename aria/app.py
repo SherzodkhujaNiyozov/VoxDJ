@@ -644,7 +644,10 @@ class Aria:
             # Enrollment kerakmi?
             if not self.voiceprint.exists() or self._pending_enroll():
                 from .paths import VOICEPRINT_PATH
-                print(f"Voiceprint yo'q ({VOICEPRINT_PATH}) — ovozni tanishtirish oynasi ochiladi.")
+                if self.voiceprint.exists():
+                    print("Ovozni qayta yozish so'raldi — tanishtirish oynasi ochiladi.")
+                else:
+                    print(f"Voiceprint yo'q ({VOICEPRINT_PATH}) — tanishtirish oynasi ochiladi.")
                 from . import asr as _asr
                 _asr.refresh_devices()                  # yangi qurilmalarni ko'rish
                 dev = self._resolve_mic()               # tinglashdagi AYNI mikrofon

@@ -30,6 +30,11 @@ class Overlay:
             return  # GUI bo'lmasa, overlay'siz ham app ishlayveradi
         root = self._root
         root.withdraw()
+        # DIQQAT: enrollment alohida tk.Tk() yaratadi (main thread), bu global
+        # tkinter._default_root'ni almashtiradi. Quyidagi barcha widget/Variable'lar
+        # ANIQ master bilan yaratiladi — aks holda master'siz tk.StringVar global
+        # (boshqa thread'dagi) root'ga bog'lanib "main thread is not in main loop"
+        # xatosini beradi.
 
         win = tk.Toplevel(root)
         self._win = win
@@ -50,6 +55,12 @@ class Overlay:
 
         self._poll()
         root.mainloop()
+        # Mainloop tugadi (stop) — root'ni butunlay yo'q qilamiz. Aks holda dead
+        # root global _default_root sifatida qolib, keyingi Tk ishlatishni buzadi.
+        try:
+            root.destroy()
+        except Exception:
+            pass
 
     def _poll(self):
         try:
@@ -133,7 +144,7 @@ class Overlay:
             wrap.pack(fill="both", expand=True, padx=22, pady=20)
             tk.Label(wrap, text=prompt, bg="#1e293b", fg="#f1f5f9",
                      font=("Segoe UI", 11)).pack(anchor="w")
-            var = tk.StringVar(value=initial or "")
+            var = tk.StringVar(master=self._root, value=initial or "")
             entry = tk.Entry(wrap, textvariable=var, font=("Segoe UI", 14),
                              relief="flat", bg="#f8fafc", fg="#0f172a",
                              insertbackground="#0f172a")
@@ -184,3 +195,9 @@ class Overlay:
 
     def stop(self):
         self._q.put(None)
+        # Tk thread to'liq tugashini (root.destroy) kutamiz — keyingi enrollment
+        # main thread'da yangi tk.Tk() yaratishidan oldin global _default_root toza
+        # bo'lsin (poyga/«main thread is not in main loop» oldini oladi).
+        t = self._thread
+        if t is not None and t.is_alive():
+            t.join(timeout=2.0)
