@@ -55,12 +55,13 @@ class Overlay:
 
         self._poll()
         root.mainloop()
-        # Mainloop tugadi (stop) — root'ni butunlay yo'q qilamiz. Aks holda dead
-        # root global _default_root sifatida qolib, keyingi Tk ishlatishni buzadi.
-        try:
-            root.destroy()
-        except Exception:
-            pass
+        # DIQQAT: bu yerda root.destroy() ATAYLAB chaqirilMAYDI.
+        # destroy() Tcl interp'ni o'chiradi; lekin Python Tk obyekti keyinroq
+        # (masalan self._overlay=None) main thread'da finalize qilinganda
+        # "Tcl_AsyncDelete: async handler deleted by the wrong thread" panic'ini
+        # berib, butun process abort bo'ladi (repro bilan tasdiqlangan: destroy
+        # bo'lsa panic, bo'lmasa panic yo'q). Shuning uchun faqat quit qilamiz —
+        # interp'ni esa Python o'zi xavfsiz tozalaydi.
 
     def _poll(self):
         try:
@@ -195,9 +196,9 @@ class Overlay:
 
     def stop(self):
         self._q.put(None)
-        # Tk thread to'liq tugashini (root.destroy) kutamiz — keyingi enrollment
-        # main thread'da yangi tk.Tk() yaratishidan oldin global _default_root toza
-        # bo'lsin (poyga/«main thread is not in main loop» oldini oladi).
+        # Tk thread mainloop'dan chiqib tugashini kutamiz — keyingi enrollment
+        # main thread'da yangi tk.Tk() yaratishidan oldin overlay thread'i toza
+        # yopilgan bo'lsin (ikki Tk interp'i bir vaqtda sozlanmasin).
         t = self._thread
         if t is not None and t.is_alive():
             t.join(timeout=2.0)
