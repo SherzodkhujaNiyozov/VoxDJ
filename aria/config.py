@@ -28,6 +28,10 @@ class Config:
     wake_alts: List[str] = field(default_factory=lambda: ["area"])
     # Mikrofon qurilmasi indeksi (sounddevice); None = tizim default
     mic_device: Optional[int] = None
+    # Ro'yxatdan yashiriladigan mikrofon NOMLARI (indeks emas — nom qayta
+    # yuklashda barqaror). Yashirilgan mic na tanlovda, na "microphone" sikl
+    # buyrug'ida ko'rinadi — keraksiz/ishlamaydigan qurilmaga tushib qolmaslik uchun.
+    hidden_mics: List[str] = field(default_factory=list)
     # Ovozli javob (Jarvis effekti)
     voice_feedback: bool = True
     # Ekran burchagidagi vizual bildirishnoma (ovoz o'chiq bo'lsa ham ko'rinadi)
@@ -67,6 +71,10 @@ class Config:
                 self.mic_device = v if v >= 0 else None
             except (TypeError, ValueError):
                 self.mic_device = None
+        # hidden_mics: matn (qurilma nomlari) ro'yxati
+        if not isinstance(self.hidden_mics, list):
+            self.hidden_mics = []
+        self.hidden_mics = [str(m) for m in self.hidden_mics if m]
         return self
 
 

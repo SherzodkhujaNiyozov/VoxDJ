@@ -199,10 +199,15 @@ class Aria:
             return f"Volume {new} percent"
         return ""
 
-    def _next_mic(self) -> str:
-        """Keyingi input qurilmasiga o'tadi (WASAPI — Windows ro'yxatidagi kabi)."""
+    def _visible_mics(self):
+        """Yashirilmagan mikrofonlar (WASAPI ro'yxatidan hidden_mics chiqarilgan)."""
         from .asr import list_input_devices
-        devices = list_input_devices()
+        hidden = set(self.cfg.hidden_mics)
+        return [(i, n) for i, n in list_input_devices() if n not in hidden]
+
+    def _next_mic(self) -> str:
+        """Keyingi input qurilmasiga o'tadi (faqat yashirilmagan WASAPI mic'lari)."""
+        devices = self._visible_mics()
         if not devices:
             return "No microphone found"
         indices = [i for i, _ in devices]
@@ -282,26 +287,28 @@ class Aria:
             return setter
 
         def set_custom_wake(icon, item):
-            import tkinter as tk
-            from tkinter import simpledialog
-            _r = tk.Tk()
-            _r.withdraw()
-            word = simpledialog.askstring(
+            # DIQQAT: dialog overlay'ning Tk thread'ida quriladi (klaviatura ishlashi
+            # uchun). Yangi tk.Tk() ochish input'ni bloklab qo'yardi.
+            if self._overlay is None:
+                return
+            word = self._overlay.ask_text(
                 self.i18n.t("menu_wake_word"),
                 self.i18n.t("menu_wake_custom_prompt"),
-                initialvalue=self.cfg.wake_word,
-                parent=_r,
+                initial=self.cfg.wake_word,
             )
-            _r.destroy()
-            if word and word.strip():
-                word = word.strip().lower()[:20]
-                self.cfg.wake_word = word
-                self.cfg.wake_alts = []
-                config_mod.save(self.cfg)
-                commands.WAKE_WORDS = {word}
-                if self.recognizer:
-                    self.recognizer.set_wake(word, [])
-                icon.update_menu()
+            if not word:
+                return
+            # Faqat harf va bo'shliq (grammatika xavfsizligi), 1–20 belgi
+            word = "".join(c for c in word.lower() if c.isalpha() or c == " ").strip()[:20]
+            if not word:
+                return
+            self.cfg.wake_word = word
+            self.cfg.wake_alts = []
+            config_mod.save(self.cfg)
+            commands.WAKE_WORDS = {word}
+            if self.recognizer:
+                self.recognizer.set_wake(word, [])
+            icon.update_menu()
 
         wake_submenu = Menu(
             *[
@@ -314,11 +321,11 @@ class Aria:
             MenuItem(tr("menu_wake_custom"), set_custom_wake),
         )
 
-        # Mikrofon qurilmalari ro'yxati (WASAPI — Windows Sozlamalaridagi kabi toza)
-        def _get_input_devices():
-            from .asr import list_input_devices
-            return list_input_devices()
+        # Mikrofon qurilmalari (WASAPI — Windows Sozlamalaridagi kabi toza)
+        from .asr import list_input_devices
+        _all_mics = list_input_devices()
 
+        # --- Mikrofon TANLASH: faqat yashirilmaganlari ---
         def make_mic_setter(dev_idx):
             def setter(icon, item):
                 self.cfg.mic_device = dev_idx
@@ -327,7 +334,6 @@ class Aria:
                 icon.update_menu()
             return setter
 
-        _mic_devs = _get_input_devices()
         _mic_items = [
             MenuItem(
                 tr("menu_mic_default"), make_mic_setter(None),
@@ -335,13 +341,40 @@ class Aria:
                 radio=True,
             )
         ]
-        for _dev_idx, _dev_name in _mic_devs:
+        for _dev_idx, _dev_name in self._visible_mics():
             _mic_items.append(MenuItem(
                 _dev_name[:40], make_mic_setter(_dev_idx),
                 checked=lambda i, di=_dev_idx: self.cfg.mic_device == di,
                 radio=True,
             ))
         mic_submenu = Menu(*_mic_items)
+
+        # --- Mikrofonlarni BOSHQARISH: keraksizlarini ro'yxatdan yashirish ---
+        # Belgilangan = ko'rinadi; belgisiz = yashirilgan (tanlov/sikl tashlab ketadi).
+        def make_mic_toggle(dev_name):
+            def toggle(icon, item):
+                hidden = list(self.cfg.hidden_mics)
+                if dev_name in hidden:
+                    hidden.remove(dev_name)
+                else:
+                    hidden.append(dev_name)
+                    # Yashirilgan mic ayni aktiv bo'lsa — tizim default'iga qaytamiz
+                    cur = next((i for i, n in list_input_devices() if n == dev_name), None)
+                    if cur is not None and self.cfg.mic_device == cur:
+                        self.cfg.mic_device = None
+                        self._mic_restart.set()
+                self.cfg.hidden_mics = hidden
+                config_mod.save(self.cfg)
+                icon.update_menu()
+            return toggle
+
+        manage_submenu = Menu(*[
+            MenuItem(
+                _dev_name[:40], make_mic_toggle(_dev_name),
+                checked=lambda i, n=_dev_name: n not in self.cfg.hidden_mics,
+            )
+            for _dev_idx, _dev_name in _all_mics
+        ])
 
         def toggle_feedback(icon, item):
             self.cfg.voice_feedback = not self.cfg.voice_feedback
@@ -397,6 +430,7 @@ class Aria:
                      checked=lambda i: self.cfg.overlay_enabled),
             Menu.SEPARATOR,
             MenuItem(tr("menu_mic"), mic_submenu),
+            MenuItem(tr("menu_mic_manage"), manage_submenu),
             Menu.SEPARATOR,
             MenuItem(tr("menu_language"), Menu(*[
                 MenuItem(LANG_NAMES[code], make_lang_setter(code),

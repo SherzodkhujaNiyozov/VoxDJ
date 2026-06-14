@@ -58,6 +58,13 @@ class Overlay:
                 if msg is None:
                     self._root.quit()
                     return
+                if callable(msg):
+                    # Tk thread'ida bajariladigan topshiriq (masalan, matn kiritish oynasi)
+                    try:
+                        msg()
+                    except Exception:
+                        pass
+                    continue
                 self._display(msg)
         except queue.Empty:
             pass
@@ -84,6 +91,67 @@ class Overlay:
 
     def set_enabled(self, enabled: bool):
         self.enabled = enabled
+
+    def ask_text(self, title: str, prompt: str, initial: str = "",
+                 timeout: float = 120.0):
+        """Matn kiritish oynasi — overlay'ning MAVJUD Tk thread'ida quriladi.
+
+        DIQQAT: Tkinter bir process'da faqat bitta thread'da ishonchli ishlaydi.
+        Boshqa thread'da yangi tk.Tk() ochilsa, oyna klaviatura input'ini ololmaydi
+        (wake so'zini yoza olmaslik shu sabab edi). Shuning uchun dialogni shu yerda
+        — Tk thread'ida — quramiz va chaqiruvchi thread natija kelguncha bloklanadi.
+        Bekor qilinsa yoki vaqt tugasa None qaytadi.
+        """
+        if self._root is None:
+            return None
+        result = {"value": None}
+        done = threading.Event()
+        self._q.put(lambda: self._build_input(title, prompt, initial, result, done))
+        done.wait(timeout)
+        return result["value"]
+
+    def _build_input(self, title, prompt, initial, result, done):
+        import tkinter as tk
+        try:
+            dlg = tk.Toplevel(self._root)
+        except Exception:
+            done.set()
+            return
+        dlg.title(title)
+        dlg.attributes("-topmost", True)
+        dlg.resizable(False, False)
+        tk.Label(dlg, text=prompt, font=("Segoe UI", 10),
+                 padx=18, pady=(16, 6)).pack(anchor="w")
+        var = tk.StringVar(value=initial)
+        entry = tk.Entry(dlg, textvariable=var, font=("Segoe UI", 13), width=26)
+        entry.pack(padx=18, pady=(0, 4))
+        entry.icursor("end")
+        entry.select_range(0, "end")
+
+        def finish(value):
+            result["value"] = value
+            try:
+                dlg.destroy()
+            finally:
+                done.set()
+
+        btns = tk.Frame(dlg)
+        btns.pack(padx=18, pady=14)
+        tk.Button(btns, text="OK", width=9,
+                  command=lambda: finish(var.get().strip())).pack(side="left", padx=6)
+        tk.Button(btns, text="✕", width=4,
+                  command=lambda: finish(None)).pack(side="left", padx=6)
+        dlg.bind("<Return>", lambda e: finish(var.get().strip()))
+        dlg.bind("<Escape>", lambda e: finish(None))
+        dlg.protocol("WM_DELETE_WINDOW", lambda: finish(None))
+
+        dlg.update_idletasks()
+        w, h = dlg.winfo_width(), dlg.winfo_height()
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"+{(sw - w) // 2}+{(sh - h) // 3}")
+        dlg.lift()
+        dlg.focus_force()
+        entry.focus_force()
 
     def stop(self):
         self._q.put(None)
