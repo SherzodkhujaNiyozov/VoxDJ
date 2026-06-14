@@ -43,6 +43,39 @@ def build_grammar(wake_word: str = "aria", wake_alts: Optional[List[str]] = None
     return " ".join(parts) + " " + _GRAMMAR_BASE
 
 
+def list_input_devices() -> List[tuple]:
+    """Windows Sozlamalaridagi kabi TOZA mikrofon ro'yxati.
+
+    sounddevice barcha host API'lar (MME, DirectSound, WASAPI, WDM-KS, ASIO)
+    bo'yicha qurilmalarni qaytaradi → bitta mikrofon 5-6 marta takrorlanadi,
+    MME esa nomlarni 31 belgida kesadi. Faqat WASAPI'ni olamiz — u Windows
+    endpoint'lariga (Sozlamalar > Ovoz > Kirish) aynan mos keladi va to'liq
+    nom beradi.
+
+    Returns: [(global_device_index, name), ...] — InputStream(device=index) bilan ishlaydi.
+    """
+    try:
+        hostapis = sd.query_hostapis()
+        devices = sd.query_devices()
+    except Exception:
+        return []
+    wasapi_idx = next((i for i, ha in enumerate(hostapis)
+                       if "WASAPI" in ha.get("name", "")), None)
+    out = []
+    for idx, d in enumerate(devices):
+        if d.get("max_input_channels", 0) <= 0:
+            continue
+        if wasapi_idx is not None and d.get("hostapi") != wasapi_idx:
+            continue
+        out.append((idx, d.get("name", f"Device {idx}")))
+    # WASAPI topilmasa (juda kam holat) — barcha input qurilmalari (zaxira)
+    if not out:
+        out = [(idx, d.get("name", f"Device {idx}"))
+               for idx, d in enumerate(devices)
+               if d.get("max_input_channels", 0) > 0]
+    return out
+
+
 @dataclass
 class Utterance:
     text: str

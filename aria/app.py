@@ -200,10 +200,9 @@ class Aria:
         return ""
 
     def _next_mic(self) -> str:
-        """Keyingi input qurilmasiga o'tadi. Feedback matnini qaytaradi."""
-        import sounddevice as sd
-        devices = [(i, d['name']) for i, d in enumerate(sd.query_devices())
-                   if d['max_input_channels'] > 0]
+        """Keyingi input qurilmasiga o'tadi (WASAPI — Windows ro'yxatidagi kabi)."""
+        from .asr import list_input_devices
+        devices = list_input_devices()
         if not devices:
             return "No microphone found"
         indices = [i for i, _ in devices]
@@ -315,14 +314,10 @@ class Aria:
             MenuItem(tr("menu_wake_custom"), set_custom_wake),
         )
 
-        # Mikrofon qurilmalari ro'yxati
+        # Mikrofon qurilmalari ro'yxati (WASAPI — Windows Sozlamalaridagi kabi toza)
         def _get_input_devices():
-            try:
-                import sounddevice as sd
-                return [(i, d['name']) for i, d in enumerate(sd.query_devices())
-                        if d['max_input_channels'] > 0]
-            except Exception:
-                return []
+            from .asr import list_input_devices
+            return list_input_devices()
 
         def make_mic_setter(dev_idx):
             def setter(icon, item):
