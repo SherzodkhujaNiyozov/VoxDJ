@@ -42,7 +42,9 @@ class Config:
     # Windows bilan birga ishga tushsinmi
     autostart: bool = False
     # Speaker tasdiqlash chegarasi (cosine similarity). Past = ko'proq qabul qiladi.
-    speaker_threshold: float = 0.45
+    # 0.40 — egasini ishonchli taniydi (turli mikrofon/qisqa gaplarda 0.45 ko'p
+    # rad etardi). Begona ovoz odatda 0.40 dan ancha past chiqadi.
+    speaker_threshold: float = 0.40
     # Nisbiy ovoz qadami ("louder"/"quieter") foizda
     volume_step: int = 10
 

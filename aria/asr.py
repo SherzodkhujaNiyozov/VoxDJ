@@ -43,6 +43,21 @@ def build_grammar(wake_word: str = "aria", wake_alts: Optional[List[str]] = None
     return " ".join(parts) + " " + _GRAMMAR_BASE
 
 
+def refresh_devices() -> None:
+    """PortAudio'ni qayta ishga tushiradi — yangi ulangan/uzilgan qurilmalarni
+    ko'rish uchun (naushnik kabi). PortAudio qurilmalar ro'yxatini faqat init
+    paytida o'qiydi; reinit qilmasdan yangi qurilma ko'rinmaydi.
+
+    DIQQAT: ochiq stream'larni bekor qiladi — FAQAT stream YOPIQ paytda chaqir
+    (masalan mikrofonni qayta ochishdan oldin, listener thread'ida).
+    """
+    try:
+        sd._terminate()
+        sd._initialize()
+    except Exception:
+        pass
+
+
 def list_input_devices() -> List[tuple]:
     """Windows Sozlamalaridagi kabi TOZA mikrofon ro'yxati.
 

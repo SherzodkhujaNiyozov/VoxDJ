@@ -12,14 +12,18 @@ from .asr import Microphone, Recognizer
 from .i18n import I18n
 from .speaker import Voiceprint
 
-_CAPTURE_SECONDS = 6.0
+_CAPTURE_SECONDS = 8.0
 
 
 def run_enrollment(recognizer: Recognizer, voiceprint: Voiceprint, i18n: I18n,
-                   wake_word: str = "aria") -> bool:
+                   wake_word: str = "aria", device=None) -> bool:
     """Modal enrollment oynasini ochadi. Muvaffaqiyatli bo'lsa True qaytaradi.
 
     Tkinter main thread'da ishlashi kerak — shu funksiya main thread'dan chaqiriladi.
+
+    `device`: enrollment qaysi mikrofonda yozilsin (indeks). MUHIM — tinglashda
+    ishlatiladigan AYNAN SHU mikrofon bo'lishi kerak, aks holda x-vector mos
+    kelmaydi va egasi tanilmaydi (turli mikrofon = turli ovoz "izi").
     """
     state = {"ok": False}
     wake_cap = wake_word.capitalize()
@@ -56,7 +60,7 @@ def run_enrollment(recognizer: Recognizer, voiceprint: Voiceprint, i18n: I18n,
 
     def capture_worker() -> None:
         import time
-        mic = Microphone()
+        mic = Microphone(device)               # AYNI tinglash mikrofoni
         samples = []
         try:
             # Enrollment: grammatikasiz — har qanday nutqdan x-vector olamiz
@@ -83,6 +87,7 @@ def run_enrollment(recognizer: Recognizer, voiceprint: Voiceprint, i18n: I18n,
         finally:
             mic.stop()
             recognizer.restart(use_grammar=True)  # tinglash uchun grammatikani qaytaramiz
+        print(f"[enroll] {len(samples)} ta x-vector namunasi olindi.")
 
         if samples:
             voiceprint.save_from_samples(samples)

@@ -92,6 +92,16 @@ class Overlay:
     def set_enabled(self, enabled: bool):
         self.enabled = enabled
 
+    def run_on_tk(self, fn):
+        """fn(root) ni overlay'ning Tk thread'ida bajaradi (Tkinter thread-affinity).
+
+        Boshqa thread'da yangi tk.Tk() ochib bo'lmaydi — shuning uchun oyna
+        quradigan kod shu yo'l bilan Tk thread'iga topshiriladi.
+        """
+        if self._root is None:
+            return
+        self._q.put(lambda: fn(self._root))
+
     def ask_text(self, title: str, prompt: str, initial: str, on_submit):
         """Matn kiritish oynasini ochadi — ASINXRON, hech qaysi thread'ni bloklamaydi.
 

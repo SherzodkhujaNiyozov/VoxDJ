@@ -6,6 +6,8 @@ buyruqlarni cosine similarity orqali solishtiramiz. Database emas — bitta fayl
 """
 
 import json
+import os
+import tempfile
 from typing import Optional
 
 import numpy as np
@@ -49,10 +51,19 @@ class Voiceprint:
         mean = np.mean(np.asarray(samples, dtype=np.float64), axis=0)
         self.embedding = _normalize(mean)
         ensure_appdata()
-        VOICEPRINT_PATH.write_text(
-            json.dumps({"version": 1, "embedding": self.embedding.tolist()}),
-            encoding="utf-8",
-        )
+        # Atomik yozish: temp faylga yozib, keyin o'rniga qo'yamiz (yarim yozilmaydi,
+        # buzilmaydi). Ilgari oddiy write_text edi — uzilish bo'lsa fayl buzilardi.
+        data = json.dumps({"version": 1, "embedding": self.embedding.tolist()})
+        fd, tmp = tempfile.mkstemp(dir=str(VOICEPRINT_PATH.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, VOICEPRINT_PATH)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
 
     def verify(self, vec, threshold: float) -> bool:
         """Kelgan x-vector egasiga tegishlimi? (cosine >= threshold)"""
