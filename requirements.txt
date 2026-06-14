@@ -1,0 +1,11 @@
+# Aria — ovoz bilan audio boshqarish (offline, database talab qilmaydi)
+# Hamma narsa bepul va lokal ishlaydi; internet faqat modellarni bir marta yuklash uchun.
+
+vosk==0.3.45            # offline ASR + speaker x-vector (bitta kutubxonada ikkalasi ham)
+sounddevice==0.4.7      # mikrofondan audio oqimi
+numpy>=1.26,<3          # x-vector cosine hisob-kitobi
+pycaw==20240210         # Windows Core Audio (master volume / mute)
+comtypes>=1.2,<2        # pycaw uchun COM
+pystray==0.19.5         # system tray
+pillow>=10              # tray ikonkasi uchun
+pyttsx3==2.90           # offline ovozli javob (Windows SAPI)

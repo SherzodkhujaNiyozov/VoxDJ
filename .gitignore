@@ -1,0 +1,31 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- VoxDJ modellari (katta, repodan tashqarida; download_models.py yuklab oladi) ---
+models/
+*.zip
+
+# --- Build / release artefaktlari ---
+build/
+dist/
+*.spec
+release/
+
+# --- Lokal foydalanuvchi ma'lumotlari (hech qachon commit qilinmaydi) ---
+# Voiceprint va config %APPDATA%/VoxDJ da saqlanadi, repoda emas — lekin
+# tasodifan lokal nusxa paydo bo'lsa ham, hech narsa chiqmasin:
+voiceprint.json
+config.json
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
