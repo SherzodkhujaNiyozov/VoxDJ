@@ -34,6 +34,7 @@ class Aria:
         self.recognizer = None  # lazy: og'ir yuklanadi
 
         self._stop_event = threading.Event()
+        self._mic_restart = threading.Event()  # mic qurilmasi o'zgarganda set qilinadi
         self._reenroll = False
         self._quit = False
         self._listener_thread = None
@@ -47,7 +48,13 @@ class Aria:
             from vosk import SetLogLevel
             SetLogLevel(-1)  # Vosk shovqinli loglarini o'chiramiz
             from .asr import Recognizer
-            self.recognizer = Recognizer(str(ASR_MODEL_DIR), str(SPK_MODEL_DIR))
+            self.recognizer = Recognizer(
+                str(ASR_MODEL_DIR), str(SPK_MODEL_DIR),
+                wake_word=self.cfg.wake_word,
+                wake_alts=self.cfg.wake_alts,
+            )
+            # commands moduli wake set'ini sinxronlaymiz
+            commands.WAKE_WORDS = {self.cfg.wake_word} | set(self.cfg.wake_alts)
         return self.recognizer
 
     # ---- Tinglash tsikli (worker thread) --------------------------------
@@ -57,18 +64,30 @@ class Aria:
         audio = AudioController()          # COM shu thread'da init bo'lishi shart
         app_audio = AppAudio()             # per-app sessiyalar (xuddi shu COM thread'i)
         tts = Speaker(self.cfg.voice_feedback)
-        mic = Microphone()
-        try:
-            mic.start()
-            while not self._stop_event.is_set():
-                data = mic.read(timeout=0.3)
-                if not data:
-                    continue
-                utt = self.recognizer.accept(data)
-                if utt and utt.text:  # bo'sh matnlarni e'tiborsiz qoldiramiz
-                    self._handle(utt, audio, app_audio, tts)
-        finally:
-            mic.stop()
+
+        # Tashqi tsikl: mic qurilmasi o'zgarganda qayta yaratiladi
+        while not self._stop_event.is_set():
+            self._mic_restart.clear()
+            mic = Microphone(self.cfg.mic_device)
+            try:
+                mic.start()
+            except Exception as exc:
+                print(f"[mic] Ochilmadi (device={self.cfg.mic_device}): {exc}")
+                self._stop_event.wait(2.0)
+                continue
+            try:
+                while not self._stop_event.is_set() and not self._mic_restart.is_set():
+                    data = mic.read(timeout=0.3)
+                    if not data:
+                        continue
+                    utt = self.recognizer.accept(data)
+                    if utt and utt.text:  # bo'sh matnlarni e'tiborsiz qoldiramiz
+                        self._handle(utt, audio, app_audio, tts)
+            finally:
+                mic.stop()
+            # Mic o'zgardi — Kaldi buferini tozalaymiz va yangi qurilma bilan davom etamiz
+            if self._mic_restart.is_set() and not self._stop_event.is_set():
+                self.recognizer.restart()
 
     def _is_owner(self, utt) -> bool:
         """Speaker tasdiqlash. allow_all yoqilgan yoki voiceprint yo'q bo'lsa — True."""
@@ -157,6 +176,9 @@ class Aria:
             self._refresh_tray()
             return "Everyone can control" if cmd.value else "Owner only"
 
+        if k == commands.CHANGE_MIC:
+            return self._next_mic()
+
         # --- Ovoz/mute: ilova kaliti bo'lsa — o'sha ilovaga, aks holda master ---
         if cmd.app:
             return self._execute_app(cmd, app_audio)
@@ -176,6 +198,24 @@ class Aria:
             audio.set_volume(new / 100.0)
             return f"Volume {new} percent"
         return ""
+
+    def _next_mic(self) -> str:
+        """Keyingi input qurilmasiga o'tadi. Feedback matnini qaytaradi."""
+        import sounddevice as sd
+        devices = [(i, d['name']) for i, d in enumerate(sd.query_devices())
+                   if d['max_input_channels'] > 0]
+        if not devices:
+            return "No microphone found"
+        indices = [i for i, _ in devices]
+        cur = self.cfg.mic_device
+        pos = next((j for j, i in enumerate(indices) if i == cur), -1)
+        nxt = (pos + 1) % len(devices)
+        idx, name = devices[nxt]
+        self.cfg.mic_device = idx
+        config_mod.save(self.cfg)
+        self._mic_restart.set()
+        self._refresh_tray()
+        return f"Microphone {name[:25]}"
 
     def _execute_app(self, cmd, app_audio) -> str:
         """Alohida ilova ovozini boshqarish (spotify/chrome/.../app)."""
@@ -219,10 +259,94 @@ class Aria:
             config_mod.save(self.cfg)
             icon.update_menu()
 
-        def toggle_wake(icon, item):
+        def toggle_wake_enabled(icon, item):
             self.cfg.wake_word_enabled = not self.cfg.wake_word_enabled
             config_mod.save(self.cfg)
             icon.update_menu()
+
+        # Wake word presetlari: (ko'rsatiladigan nom, so'z, fonetik variantlar)
+        _WAKE_PRESETS = [
+            (self.i18n.t("menu_wake_aria"),   "aria",   ["area"]),
+            (self.i18n.t("menu_wake_vox"),    "vox",    []),
+            (self.i18n.t("menu_wake_jarvis"), "jarvis", []),
+        ]
+
+        def make_wake_setter(word, alts):
+            def setter(icon, item):
+                self.cfg.wake_word = word
+                self.cfg.wake_alts = alts[:]
+                config_mod.save(self.cfg)
+                commands.WAKE_WORDS = {word} | set(alts)
+                if self.recognizer:
+                    self.recognizer.set_wake(word, alts)
+                icon.update_menu()
+            return setter
+
+        def set_custom_wake(icon, item):
+            import tkinter as tk
+            from tkinter import simpledialog
+            _r = tk.Tk()
+            _r.withdraw()
+            word = simpledialog.askstring(
+                self.i18n.t("menu_wake_word"),
+                self.i18n.t("menu_wake_custom_prompt"),
+                initialvalue=self.cfg.wake_word,
+                parent=_r,
+            )
+            _r.destroy()
+            if word and word.strip():
+                word = word.strip().lower()[:20]
+                self.cfg.wake_word = word
+                self.cfg.wake_alts = []
+                config_mod.save(self.cfg)
+                commands.WAKE_WORDS = {word}
+                if self.recognizer:
+                    self.recognizer.set_wake(word, [])
+                icon.update_menu()
+
+        wake_submenu = Menu(
+            *[
+                MenuItem(name, make_wake_setter(word, alts),
+                         checked=lambda i, w=word: self.cfg.wake_word == w,
+                         radio=True)
+                for name, word, alts in _WAKE_PRESETS
+            ],
+            Menu.SEPARATOR,
+            MenuItem(tr("menu_wake_custom"), set_custom_wake),
+        )
+
+        # Mikrofon qurilmalari ro'yxati
+        def _get_input_devices():
+            try:
+                import sounddevice as sd
+                return [(i, d['name']) for i, d in enumerate(sd.query_devices())
+                        if d['max_input_channels'] > 0]
+            except Exception:
+                return []
+
+        def make_mic_setter(dev_idx):
+            def setter(icon, item):
+                self.cfg.mic_device = dev_idx
+                config_mod.save(self.cfg)
+                self._mic_restart.set()
+                icon.update_menu()
+            return setter
+
+        _mic_devs = _get_input_devices()
+        _mic_items = [
+            MenuItem(
+                tr("menu_mic_default"), make_mic_setter(None),
+                checked=lambda i: self.cfg.mic_device is None,
+                radio=True,
+            )
+        ]
+        for _dev_idx, _dev_name in _mic_devs:
+            _mic_items.append(MenuItem(
+                _dev_name[:40], make_mic_setter(_dev_idx),
+                checked=lambda i, di=_dev_idx: self.cfg.mic_device == di,
+                radio=True,
+            ))
+        mic_submenu = Menu(*_mic_items)
 
         def toggle_feedback(icon, item):
             self.cfg.voice_feedback = not self.cfg.voice_feedback
@@ -269,12 +393,15 @@ class Aria:
             Menu.SEPARATOR,
             MenuItem(tr("menu_allow_all"), toggle_allow_all,
                      checked=lambda i: self.cfg.allow_all_users),
-            MenuItem(tr("menu_wake_word"), toggle_wake,
+            MenuItem(tr("menu_wake_word"), wake_submenu),
+            MenuItem(tr("menu_wake_enabled"), toggle_wake_enabled,
                      checked=lambda i: self.cfg.wake_word_enabled),
             MenuItem(tr("menu_voice_feedback"), toggle_feedback,
                      checked=lambda i: self.cfg.voice_feedback),
             MenuItem(tr("menu_overlay"), toggle_overlay,
                      checked=lambda i: self.cfg.overlay_enabled),
+            Menu.SEPARATOR,
+            MenuItem(tr("menu_mic"), mic_submenu),
             Menu.SEPARATOR,
             MenuItem(tr("menu_language"), Menu(*[
                 MenuItem(LANG_NAMES[code], make_lang_setter(code),
@@ -318,7 +445,8 @@ class Aria:
                 from .paths import VOICEPRINT_PATH
                 print(f"Voiceprint yo'q ({VOICEPRINT_PATH}) — ovozni tanishtirish oynasi ochiladi.")
                 from .enroll import run_enrollment
-                ok = run_enrollment(self.recognizer, self.voiceprint, self.i18n)
+                ok = run_enrollment(self.recognizer, self.voiceprint, self.i18n,
+                                    self.cfg.wake_word)
                 print("Enrollment:", "saqlandi ✓" if ok else "saqlanmadi ✗ (ovoz olinmadi)")
             else:
                 print("Voiceprint topildi — enrollment o'tkazib yuborildi (faqat egasi).")

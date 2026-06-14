@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field, fields
+from typing import List, Optional
 
 from .paths import CONFIG_PATH, ensure_appdata
 
@@ -19,8 +20,14 @@ class Config:
     language: str = "en"
     # True bo'lsa — istalgan odam boshqara oladi; False — faqat egasi (default)
     allow_all_users: bool = False
-    # "aria" uyg'otish so'zi talab qilinsinmi (tasodifiy buyruqlardan himoya)
+    # Uyg'otish so'zi talab qilinsinmi (tasodifiy buyruqlardan himoya)
     wake_word_enabled: bool = True
+    # Uyg'otish so'zi (foydalanuvchi tanlaydi): "aria", "vox", "jarvis" yoki maxsus
+    wake_word: str = "aria"
+    # Fonetik variantlar (model bir xil eshitadigan so'zlar); "aria"→["area"] empirik
+    wake_alts: List[str] = field(default_factory=lambda: ["area"])
+    # Mikrofon qurilmasi indeksi (sounddevice); None = tizim default
+    mic_device: Optional[int] = None
     # Ovozli javob (Jarvis effekti)
     voice_feedback: bool = True
     # Ekran burchagidagi vizual bildirishnoma (ovoz o'chiq bo'lsa ham ko'rinadi)
@@ -43,6 +50,23 @@ class Config:
         self.voice_feedback = bool(self.voice_feedback)
         self.overlay_enabled = bool(self.overlay_enabled)
         self.autostart = bool(self.autostart)
+        # wake_word: kichik lotin harflari, 1–20 belgi
+        if not isinstance(self.wake_word, str) or not self.wake_word.strip():
+            self.wake_word = "aria"
+        else:
+            self.wake_word = self.wake_word.strip().lower()[:20]
+        # wake_alts: kichik lotin harflari ro'yxati
+        if not isinstance(self.wake_alts, list):
+            self.wake_alts = []
+        self.wake_alts = [str(a).strip().lower() for a in self.wake_alts
+                          if a and str(a).strip()]
+        # mic_device: None yoki manfiy bo'lmagan butun son
+        if self.mic_device is not None:
+            try:
+                v = int(self.mic_device)
+                self.mic_device = v if v >= 0 else None
+            except (TypeError, ValueError):
+                self.mic_device = None
         return self
 
 

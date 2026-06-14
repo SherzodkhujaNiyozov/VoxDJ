@@ -15,12 +15,14 @@ from .speaker import Voiceprint
 _CAPTURE_SECONDS = 6.0
 
 
-def run_enrollment(recognizer: Recognizer, voiceprint: Voiceprint, i18n: I18n) -> bool:
+def run_enrollment(recognizer: Recognizer, voiceprint: Voiceprint, i18n: I18n,
+                   wake_word: str = "aria") -> bool:
     """Modal enrollment oynasini ochadi. Muvaffaqiyatli bo'lsa True qaytaradi.
 
     Tkinter main thread'da ishlashi kerak — shu funksiya main thread'dan chaqiriladi.
     """
     state = {"ok": False}
+    wake_cap = wake_word.capitalize()
 
     root = tk.Tk()
     root.title(i18n.t("enroll_title"))
@@ -31,10 +33,10 @@ def run_enrollment(recognizer: Recognizer, voiceprint: Voiceprint, i18n: I18n) -
     frm = ttk.Frame(root, padding=24)
     frm.pack(fill="both", expand=True)
 
-    ttk.Label(frm, text="Aria", font=("Segoe UI", 20, "bold")).pack(anchor="w")
+    ttk.Label(frm, text=wake_cap, font=("Segoe UI", 20, "bold")).pack(anchor="w")
     ttk.Label(frm, text=i18n.t("enroll_intro"), wraplength=470,
               justify="left").pack(anchor="w", pady=(8, 12))
-    ttk.Label(frm, text=i18n.t("enroll_phrase"), wraplength=470,
+    ttk.Label(frm, text=i18n.t("enroll_phrase", wake=wake_cap), wraplength=470,
               font=("Segoe UI", 11, "italic"),
               foreground="#2563eb").pack(anchor="w", pady=(0, 16))
 

@@ -8,7 +8,7 @@ x-vector (kim gapirgani) ham qaytadi.
 import json
 import queue
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -16,26 +16,31 @@ import sounddevice as sd
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 8000  # ~0.5s bloklar
 
-# Cheklangan lug'at — Vosk shulardan tashqari so'zlarni tanimaydi (aniqlik oshadi).
-# "aria/area" — uyg'otish so'zi va uning fonetik varianti.
-# Test bilan tanlangan ishonchli lug'at (kichik en model):
-#   - "aria" — wake (yakka holda ham aniq tanildi); "area" — fonetik zaxira
-#   - "skip" — next uchun ("next"/"forward" ishonchsiz; "forward" "four"ni o'g'irlaydi)
-#   - "unmute" modelda YO'Q — "only mute" bo'lib chiqadi (commands.py ushlaydi)
-#   - raqamlar raqamma-raqam: "five zero" = 50
-#   - "me"/"everyone" qo'shilmadi: ular "one"ni o'g'irlaydi. Rejim almashtirish
-#     (faqat egasi / hamma) tray checkbox orqali. "only" faqat unmute uchun qoldi.
-GRAMMAR_WORDS = (
-    "aria area "
+# Uyg'otish so'zisiz buyruq lug'ati (doimiy qism).
+# Eslatmalar:
+#   - "audio" olib tashlandi: "aria" wake bilan akustik to'qnashar (4/6 fail).
+#   - "unmute" OOV — "only mute" bo'lib chiqadi (commands.py ushlaydi).
+#   - "skip" — next uchun ("next"/"forward" ishonchsiz).
+#   - "me"/"everyone" olib tashlandi: "one"ni o'g'irlardi.
+#   - "everyone"/"private" — rejim almashtirish (3/2 bo'g'in — raqam bilan to'qnashmaydi).
+#   - "microphone" — mic o'zgartirish buyrug'i.
+_GRAMMAR_BASE = (
     "play pause stop skip next previous back "
-    # "audio" OLIB TASHLANDI: u wake "aria"ni o'g'irlardi (model chalkashtirardi).
-    # Ovoz uchun "volume" ishlatiladi.
     "mute only louder quieter volume sound up down percent "
     "spotify chrome firefox edge youtube telegram music app "
+    "everyone private microphone "
     "zero one two three four five six seven eight nine ten "
     "eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen "
     "twenty thirty forty fifty sixty seventy eighty ninety hundred"
 )
+
+
+def build_grammar(wake_word: str = "aria", wake_alts: Optional[List[str]] = None) -> str:
+    """Uyg'otish so'zi + fonetik variantlar + asosiy buyruq lug'ati."""
+    if wake_alts is None:
+        wake_alts = ["area"] if wake_word == "aria" else []
+    parts = [wake_word] + [a for a in wake_alts if a and a != wake_word]
+    return " ".join(parts) + " " + _GRAMMAR_BASE
 
 
 @dataclass
@@ -47,24 +52,37 @@ class Utterance:
 class Recognizer:
     """Vosk modeli + speaker modeli + grammatikali KaldiRecognizer."""
 
-    def __init__(self, asr_model_dir: str, spk_model_dir: str, use_grammar: bool = True):
+    def __init__(self, asr_model_dir: str, spk_model_dir: str,
+                 wake_word: str = "aria", wake_alts: Optional[List[str]] = None,
+                 use_grammar: bool = True):
         from vosk import KaldiRecognizer, Model, SpkModel
 
         self._KaldiRecognizer = KaldiRecognizer
         self._model = Model(asr_model_dir)
         self._spk_model = SpkModel(spk_model_dir)
+        self._wake_word = wake_word
+        self._wake_alts = wake_alts if wake_alts is not None \
+            else (["area"] if wake_word == "aria" else [])
+        self._grammar = build_grammar(wake_word, self._wake_alts)
         self._use_grammar = use_grammar
         self._rec = self._make_rec(use_grammar)
 
     def _make_rec(self, use_grammar: bool):
         if use_grammar:
             rec = self._KaldiRecognizer(
-                self._model, SAMPLE_RATE, json.dumps([GRAMMAR_WORDS, "[unk]"]))
+                self._model, SAMPLE_RATE, json.dumps([self._grammar, "[unk]"]))
         else:
             rec = self._KaldiRecognizer(self._model, SAMPLE_RATE)
         rec.SetSpkModel(self._spk_model)
         rec.SetWords(False)
         return rec
+
+    def set_wake(self, word: str, alts: Optional[List[str]] = None) -> None:
+        """Uyg'otish so'zini o'zgartiradi va grammatikani qayta quradi."""
+        self._wake_word = word
+        self._wake_alts = alts if alts is not None else (["area"] if word == "aria" else [])
+        self._grammar = build_grammar(word, self._wake_alts)
+        self._rec = self._make_rec(self._use_grammar)
 
     def restart(self, use_grammar: Optional[bool] = None) -> None:
         """Holatni tozalab, yangi KaldiRecognizer quradi (grammatikani almashtirish mumkin).

@@ -6,10 +6,10 @@ Buyruqlar har doim inglizcha. Bajarish app.py da (audio/media controllerlar bila
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-# Uyg'otish so'zi = ilova nomi "aria". Test bilan tasdiqlangan: "aria" YAKKA holda
-# ham, buyruq bilan birga ham aniq taniladi. "area" — fonetik variant (xuddi shunday
-# eshitiladi), zaxira sifatida.
-WAKE_WORDS = {"aria", "area"}
+# Uyg'otish so'zlari — app.py tomonidan yangilanadi (foydalanuvchi wake word o'zgartirganda).
+# Default: "aria" + "area" fonetik variant. Mutable set — to'g'ridan-to'g'ri almashtiring:
+#   commands.WAKE_WORDS = {cfg.wake_word} | set(cfg.wake_alts)
+WAKE_WORDS: set = {"aria", "area"}
 
 # Yakka raqamlar (raqamma-raqam usuli uchun — eng ishonchli): "five zero" = 50
 _DIGIT = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
@@ -30,7 +30,8 @@ PLAY, PAUSE, STOP = "PLAY", "PAUSE", "STOP"
 NEXT, PREV = "NEXT", "PREV"
 MUTE, UNMUTE = "MUTE", "UNMUTE"
 SET_VOLUME, VOL_UP, VOL_DOWN = "SET_VOLUME", "VOL_UP", "VOL_DOWN"
-ALLOW_ALL = "ALLOW_ALL"  # value: 1 (hamma) yoki 0 (faqat egasi)
+ALLOW_ALL = "ALLOW_ALL"    # value: 1 (hamma) yoki 0 (faqat egasi)
+CHANGE_MIC = "CHANGE_MIC"  # keyingi mikrofon qurilmasiga o'tish
 
 # Per-app: tanilgan ilova kaliti -> jarayon nomi(lari) ichidagi bo'lak.
 # Faqat kichik model ANIQ tanийdigan nomlar (test bilan tanlangan).
@@ -129,8 +130,8 @@ def parse(text: str) -> Optional[Command]:
     s = set(tokens)
     app = next((k for k in APP_KEYWORDS if k in s), None)
     cmd = _parse_action(tokens, s, app is not None)
-    if cmd is not None and cmd.kind != ALLOW_ALL:
-        cmd.app = app  # rejim almashtirish ilovaga bog'lanmaydi
+    if cmd is not None and cmd.kind not in (ALLOW_ALL, CHANGE_MIC):
+        cmd.app = app  # rejim almashtirish va mic o'zgartirish ilovaga bog'lanmaydi
     return cmd
 
 
@@ -151,11 +152,17 @@ def _parse_action(tokens, s, app_present: bool) -> Optional[Command]:
         # "un mute" / "on mute" -> unmute; sof "mute" -> mute
         return Command(UNMUTE) if (_UNMUTE_HINTS - {"unmute"}) & s else Command(MUTE)
 
-    # --- Rejim almashtirish (tray checkbox bilan bir xil) ---
-    if ("all" in s and "users" in s) or ({"everyone", "anyone"} & s):
+    # --- Rejim almashtirish: "everyone" → hamma, "private" → faqat egasi ---
+    # "everyone" — 3 bo'g'inli, raqam so'zlari bilan to'qnashmaydi.
+    # "private" — xavfsiz fonetik (raqam so'zlari bilan o'xshashligi yo'q).
+    if "everyone" in s:
         return Command(ALLOW_ALL, 1)
-    if "only" in s and "me" in s:
+    if "private" in s:
         return Command(ALLOW_ALL, 0)
+
+    # --- Mikrofon o'zgartirish ---
+    if "microphone" in s:
+        return Command(CHANGE_MIC)
 
     # --- Media boshqaruvi (global — alohida ilovaga yo'naltirib bo'lmaydi) ---
     if "play" in s:
