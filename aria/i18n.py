@@ -19,7 +19,6 @@ STRINGS = {
         "menu_wake_custom_prompt": "Uyg'otish so'zini kiriting:",
         "menu_mic": "Mikrofon",
         "menu_mic_default": "Tizim mikrofoni (default)",
-        "menu_mic_manage": "Mikrofonlarni boshqarish",
         "menu_voice_feedback": "Ovozli javob",
         "menu_reenroll": "Ovozni qayta yozish",
         "menu_autostart": "Windows bilan ishga tushsin",
@@ -53,7 +52,6 @@ STRINGS = {
         "menu_wake_custom_prompt": "Enter the wake word:",
         "menu_mic": "Microphone",
         "menu_mic_default": "System default",
-        "menu_mic_manage": "Manage microphones",
         "menu_voice_feedback": "Voice feedback",
         "menu_reenroll": "Re-enroll my voice",
         "menu_autostart": "Start with Windows",
@@ -86,7 +84,6 @@ STRINGS = {
         "menu_wake_custom_prompt": "Introduce la palabra de activación:",
         "menu_mic": "Micrófono",
         "menu_mic_default": "Predeterminado del sistema",
-        "menu_mic_manage": "Gestionar micrófonos",
         "menu_voice_feedback": "Respuesta por voz",
         "menu_reenroll": "Volver a registrar mi voz",
         "menu_autostart": "Iniciar con Windows",
@@ -119,7 +116,6 @@ STRINGS = {
         "menu_wake_custom_prompt": "ウェイクワードを入力してください:",
         "menu_mic": "マイク",
         "menu_mic_default": "システムデフォルト",
-        "menu_mic_manage": "マイクの管理",
         "menu_voice_feedback": "音声フィードバック",
         "menu_reenroll": "自分の声を登録し直す",
         "menu_autostart": "Windows起動時に開始",
@@ -152,7 +148,6 @@ STRINGS = {
         "menu_wake_custom_prompt": "Введите слово активации:",
         "menu_mic": "Микрофон",
         "menu_mic_default": "Системный по умолчанию",
-        "menu_mic_manage": "Управление микрофонами",
         "menu_voice_feedback": "Голосовой ответ",
         "menu_reenroll": "Перезаписать мой голос",
         "menu_autostart": "Запуск вместе с Windows",
@@ -173,13 +168,23 @@ STRINGS = {
     },
 }
 
-# Qo'shimcha kalitlar (overlay) — har bir tilga qo'shamiz
+# Qo'shimcha kalitlar (overlay + mikrofon oynasi) — har bir tilga qo'shamiz
 _EXTRA = {
-    "uz": {"menu_overlay": "Ekran bildirishnomasi", "overlay_listening": "Tinglayapman…"},
-    "en": {"menu_overlay": "On-screen overlay", "overlay_listening": "Listening…"},
-    "es": {"menu_overlay": "Aviso en pantalla", "overlay_listening": "Escuchando…"},
-    "ja": {"menu_overlay": "画面通知", "overlay_listening": "聞いています…"},
-    "ru": {"menu_overlay": "Экранное уведомление", "overlay_listening": "Слушаю…"},
+    "uz": {"menu_overlay": "Ekran bildirishnomasi", "overlay_listening": "Tinglayapman…",
+           "mic_hint": "●  faolini tanlang      ☑ ko'rinadi / ☐ yashirin",
+           "mic_refresh": "⟳ Yangilash", "btn_close": "Yopish"},
+    "en": {"menu_overlay": "On-screen overlay", "overlay_listening": "Listening…",
+           "mic_hint": "●  select active      ☑ shown / ☐ hidden",
+           "mic_refresh": "⟳ Refresh", "btn_close": "Close"},
+    "es": {"menu_overlay": "Aviso en pantalla", "overlay_listening": "Escuchando…",
+           "mic_hint": "●  activar        ☑ visible / ☐ oculto",
+           "mic_refresh": "⟳ Actualizar", "btn_close": "Cerrar"},
+    "ja": {"menu_overlay": "画面通知", "overlay_listening": "聞いています…",
+           "mic_hint": "●  選択      ☑ 表示 / ☐ 非表示",
+           "mic_refresh": "⟳ 更新", "btn_close": "閉じる"},
+    "ru": {"menu_overlay": "Экранное уведомление", "overlay_listening": "Слушаю…",
+           "mic_hint": "●  выбрать       ☑ показан / ☐ скрыт",
+           "mic_refresh": "⟳ Обновить", "btn_close": "Закрыть"},
 }
 for _lang, _extra in _EXTRA.items():
     STRINGS[_lang].update(_extra)

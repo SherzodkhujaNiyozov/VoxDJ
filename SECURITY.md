@@ -20,7 +20,9 @@ Aria is built to be private by design.
 
 ## Model integrity
 
-`download_models.py` prints the SHA-256 of each downloaded archive. You can pin the expected hash in the `MODELS` list to guarantee the bytes never change between installs.
+- Models are downloaded **only over HTTPS** — `download_models.py` refuses any non-`https://` URL.
+- Each archive is extracted with a **zip-slip guard**: every entry is verified to stay inside the `models/` directory, so a tampered archive can't write files elsewhere on your system.
+- `download_models.py` prints the SHA-256 of each downloaded archive. You can pin the expected hash in the `MODELS` list to guarantee the bytes never change between installs.
 
 ## Reporting
 

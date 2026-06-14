@@ -9,6 +9,7 @@ Oqim:
 
 import sys
 import threading
+import time
 
 from . import APP_NAME, commands
 from . import config as config_mod
@@ -157,7 +158,6 @@ class Aria:
         """
         if self.cfg.allow_all_users or not self.voiceprint.exists():
             return True
-        import time
         if utt.spk is not None:
             sim = self.voiceprint.similarity(utt.spk)
             if sim >= self.cfg.speaker_threshold:
@@ -182,7 +182,6 @@ class Aria:
         mumkin — shuning uchun ALOHIDA thread'da chalamiz, aks holda tinglash
         thread'i osilib, mute'dan keyin buyruqlar o'qilmay qoladi.
         """
-        import time
         self._active_until = time.monotonic() + self.ACTIVE_WINDOW
         if self.cfg.voice_feedback:
             threading.Thread(target=self._beep, daemon=True).start()
@@ -191,7 +190,6 @@ class Aria:
             self._overlay.show("🎙 " + self.i18n.t("overlay_listening"))
 
     def _handle(self, utt, audio, app_audio, tts):
-        import time
         tokens = utt.text.split()
         had_wake, rest = commands.strip_wake(tokens)
 
@@ -335,13 +333,13 @@ class Aria:
             W, H = 500, 440
             win = tk.Toplevel(root)
             self._mic_win = win
-            win.title("Microphone — Aria")
+            win.title(f"{self.i18n.t('menu_mic')} — {APP_NAME}")
             win.configure(bg="#0f172a")
             win.attributes("-topmost", True)
 
-            tk.Label(win, text="Microphone", bg="#0f172a", fg="#f1f5f9",
+            tk.Label(win, text=self.i18n.t("menu_mic"), bg="#0f172a", fg="#f1f5f9",
                      font=("Segoe UI", 15, "bold")).pack(anchor="w", padx=22, pady=(18, 2))
-            tk.Label(win, text="●  select active     ☑ shown / ☐ hidden",
+            tk.Label(win, text=self.i18n.t("mic_hint"),
                      bg="#0f172a", fg="#94a3b8",
                      font=("Segoe UI", 9)).pack(anchor="w", padx=22)
 
@@ -353,7 +351,8 @@ class Aria:
                     return
                 for w in list_frame.winfo_children():
                     w.destroy()
-                self._mic_row(list_frame, None, "System default (auto)", is_default=True)
+                self._mic_row(list_frame, None, self.i18n.t("menu_mic_default"),
+                              is_default=True)
                 hidden = set(self.cfg.hidden_mics)
                 for _idx, name in self._enumerate_mics():
                     self._mic_row(list_frame, name, name, hidden=(name in hidden))
@@ -371,11 +370,11 @@ class Aria:
                 self._mic_restart.set()          # listener PortAudio'ni yangilaydi
                 root.after(900, repopulate)
 
-            tk.Button(btns, text="⟳ Refresh", relief="flat", cursor="hand2",
+            tk.Button(btns, text=self.i18n.t("mic_refresh"), relief="flat", cursor="hand2",
                       bg="#334155", fg="#e2e8f0", activebackground="#475569",
                       activeforeground="white", command=do_refresh).pack(side="left")
-            tk.Button(btns, text="Close", relief="flat", cursor="hand2", width=10,
-                      bg="#2563eb", fg="white", activebackground="#1d4ed8",
+            tk.Button(btns, text=self.i18n.t("btn_close"), relief="flat", cursor="hand2",
+                      width=10, bg="#2563eb", fg="white", activebackground="#1d4ed8",
                       activeforeground="white", command=lambda: _close()).pack(side="right")
 
             def _close():
@@ -637,6 +636,24 @@ class Aria:
         print("Aria ishga tushmoqda… (modellar yuklanmoqda)")
         self._ensure_recognizer()
 
+        try:
+            self._run_loop()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Har qanday holatda (toza chiqish, Ctrl+C, kutilmagan xato) toza yopamiz:
+            # listener to'xtaydi, overlay Tk thread'i quit qiladi (destroy YO'Q —
+            # Tcl_AsyncDelete panic'ining oldini olish uchun).
+            self._stop_event.set()
+            if self._listener_thread is not None:
+                self._listener_thread.join(timeout=2.0)
+            if self._overlay is not None:
+                self._overlay.stop()
+                self._overlay = None
+        self._shutdown()
+        return 0
+
+    def _run_loop(self):
         while True:
             self._reenroll = False
             self._quit = False
@@ -689,9 +706,6 @@ class Aria:
                 self._force_enroll = True
                 continue
             break
-
-        self._shutdown()
-        return 0
 
     _force_enroll = False
 

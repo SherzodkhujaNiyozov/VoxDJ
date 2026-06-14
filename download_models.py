@@ -57,6 +57,21 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Zip-slip himoyasi bilan arxivni ochadi.
+
+    Zararli (yoki buzilgan) arxiv a'zo nomida "../" yoki absolyut yo'l orqali
+    dest papkasidan TASHQARIGA fayl yozishi mumkin. Har bir a'zo dest ichida
+    qolishini tekshiramiz, aks holda to'xtaymiz.
+    """
+    dest = dest.resolve()
+    for member in zf.namelist():
+        target = (dest / member).resolve()
+        if target != dest and not target.is_relative_to(dest):
+            raise RuntimeError(f"Xavfli arxiv a'zosi (zip-slip): {member!r}")
+    zf.extractall(dest)
+
+
 def main() -> int:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     for m in MODELS:
@@ -64,6 +79,9 @@ def main() -> int:
         if target.exists():
             print(f"[skip] {m['name']} allaqachon bor")
             continue
+        if not m["url"].lower().startswith("https://"):
+            print(f"  XATO: faqat HTTPS manzillar qo'llab-quvvatlanadi: {m['url']}")
+            return 1
         print(f"[get ] {m['name']}")
         zip_path = MODELS_DIR / (m["name"] + ".zip")
         _download(m["url"], zip_path)
@@ -76,7 +94,7 @@ def main() -> int:
             return 1
 
         with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(MODELS_DIR)
+            _safe_extract(zf, MODELS_DIR)
         zip_path.unlink(missing_ok=True)
 
         if not target.exists():
