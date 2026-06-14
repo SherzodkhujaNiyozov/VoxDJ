@@ -92,66 +92,85 @@ class Overlay:
     def set_enabled(self, enabled: bool):
         self.enabled = enabled
 
-    def ask_text(self, title: str, prompt: str, initial: str = "",
-                 timeout: float = 120.0):
-        """Matn kiritish oynasi — overlay'ning MAVJUD Tk thread'ida quriladi.
+    def ask_text(self, title: str, prompt: str, initial: str, on_submit):
+        """Matn kiritish oynasini ochadi — ASINXRON, hech qaysi thread'ni bloklamaydi.
 
-        DIQQAT: Tkinter bir process'da faqat bitta thread'da ishonchli ishlaydi.
-        Boshqa thread'da yangi tk.Tk() ochilsa, oyna klaviatura input'ini ololmaydi
-        (wake so'zini yoza olmaslik shu sabab edi). Shuning uchun dialogni shu yerda
-        — Tk thread'ida — quramiz va chaqiruvchi thread natija kelguncha bloklanadi.
-        Bekor qilinsa yoki vaqt tugasa None qaytadi.
+        Oyna overlay'ning MAVJUD Tk thread'ida quriladi (Tkinter bir process'da
+        bitta thread'da ishlashi shart — boshqa thread'da yangi tk.Tk() ochilsa
+        klaviatura input ololmaydi). Foydalanuvchi tasdiqlaganda yoki bekor
+        qilganda `on_submit(value)` Tk thread'ida chaqiriladi (bekor → None).
+
+        Chaqiruvchi (masalan tray callback) darhol qaytadi — shuning uchun tray
+        muzlab qolmaydi.
         """
         if self._root is None:
-            return None
-        result = {"value": None}
-        done = threading.Event()
-        self._q.put(lambda: self._build_input(title, prompt, initial, result, done))
-        done.wait(timeout)
-        return result["value"]
+            on_submit(None)
+            return
+        self._q.put(lambda: self._build_input(title, prompt, initial, on_submit))
 
-    def _build_input(self, title, prompt, initial, result, done):
+    def _build_input(self, title, prompt, initial, on_submit):
         import tkinter as tk
+        import traceback
+        W, H = 420, 180
         try:
             dlg = tk.Toplevel(self._root)
+            dlg.title(title)
+            dlg.configure(bg="#1e293b")
+            dlg.resizable(False, False)
+            dlg.attributes("-topmost", True)
+
+            wrap = tk.Frame(dlg, bg="#1e293b")
+            wrap.pack(fill="both", expand=True, padx=22, pady=20)
+            tk.Label(wrap, text=prompt, bg="#1e293b", fg="#f1f5f9",
+                     font=("Segoe UI", 11)).pack(anchor="w")
+            var = tk.StringVar(value=initial or "")
+            entry = tk.Entry(wrap, textvariable=var, font=("Segoe UI", 14),
+                             relief="flat", bg="#f8fafc", fg="#0f172a",
+                             insertbackground="#0f172a")
+            entry.pack(fill="x", pady=(12, 0), ipady=7)
+
+            guard = {"done": False}
+
+            def finish(value):
+                if guard["done"]:
+                    return
+                guard["done"] = True
+                try:
+                    dlg.destroy()
+                except Exception:
+                    pass
+                try:
+                    on_submit(value)
+                except Exception:
+                    traceback.print_exc()
+
+            btns = tk.Frame(wrap, bg="#1e293b")
+            btns.pack(side="bottom", fill="x", pady=(18, 0))
+            tk.Button(btns, text="OK", width=10, relief="flat", cursor="hand2",
+                      bg="#2563eb", fg="white", activebackground="#1d4ed8",
+                      activeforeground="white", command=lambda: finish(var.get())
+                      ).pack(side="right")
+            tk.Button(btns, text="✕", width=4, relief="flat", cursor="hand2",
+                      bg="#334155", fg="#e2e8f0", activebackground="#475569",
+                      command=lambda: finish(None)).pack(side="right", padx=(0, 8))
+
+            dlg.bind("<Return>", lambda e: finish(var.get()))
+            dlg.bind("<Escape>", lambda e: finish(None))
+            dlg.protocol("WM_DELETE_WINDOW", lambda: finish(None))
+
+            sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+            x, y = (sw - W) // 2, (sh - H) // 3
+            dlg.geometry(f"{W}x{H}+{x}+{y}")
+            dlg.lift()
+            dlg.focus_force()
+            entry.focus_set()
+            entry.icursor("end")
         except Exception:
-            done.set()
-            return
-        dlg.title(title)
-        dlg.attributes("-topmost", True)
-        dlg.resizable(False, False)
-        tk.Label(dlg, text=prompt, font=("Segoe UI", 10),
-                 padx=18, pady=(16, 6)).pack(anchor="w")
-        var = tk.StringVar(value=initial)
-        entry = tk.Entry(dlg, textvariable=var, font=("Segoe UI", 13), width=26)
-        entry.pack(padx=18, pady=(0, 4))
-        entry.icursor("end")
-        entry.select_range(0, "end")
-
-        def finish(value):
-            result["value"] = value
+            traceback.print_exc()
             try:
-                dlg.destroy()
-            finally:
-                done.set()
-
-        btns = tk.Frame(dlg)
-        btns.pack(padx=18, pady=14)
-        tk.Button(btns, text="OK", width=9,
-                  command=lambda: finish(var.get().strip())).pack(side="left", padx=6)
-        tk.Button(btns, text="✕", width=4,
-                  command=lambda: finish(None)).pack(side="left", padx=6)
-        dlg.bind("<Return>", lambda e: finish(var.get().strip()))
-        dlg.bind("<Escape>", lambda e: finish(None))
-        dlg.protocol("WM_DELETE_WINDOW", lambda: finish(None))
-
-        dlg.update_idletasks()
-        w, h = dlg.winfo_width(), dlg.winfo_height()
-        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
-        dlg.geometry(f"+{(sw - w) // 2}+{(sh - h) // 3}")
-        dlg.lift()
-        dlg.focus_force()
-        entry.focus_force()
+                on_submit(None)
+            except Exception:
+                pass
 
     def stop(self):
         self._q.put(None)

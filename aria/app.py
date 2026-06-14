@@ -68,11 +68,8 @@ class Aria:
         # Tashqi tsikl: mic qurilmasi o'zgarganda qayta yaratiladi
         while not self._stop_event.is_set():
             self._mic_restart.clear()
-            mic = Microphone(self.cfg.mic_device)
-            try:
-                mic.start()
-            except Exception as exc:
-                print(f"[mic] Ochilmadi (device={self.cfg.mic_device}): {exc}")
+            mic = self._open_mic(Microphone)
+            if mic is None:                       # hech qanday mic ochilmadi
                 self._stop_event.wait(2.0)
                 continue
             try:
@@ -88,6 +85,48 @@ class Aria:
             # Mic o'zgardi — Kaldi buferini tozalaymiz va yangi qurilma bilan davom etamiz
             if self._mic_restart.is_set() and not self._stop_event.is_set():
                 self.recognizer.restart()
+
+    def _resolve_mic(self):
+        """cfg.mic_name → joriy qurilma indeksi.
+
+        Indekslar qayta ishga tushganda siljiydi, shuning uchun har safar nomdan
+        topamiz. None → tizim default (yoki nom topilmadi). Yashirilgan mic tanlangan
+        bo'lsa ham default'ga qaytamiz.
+        """
+        name = self.cfg.mic_name
+        if not name or name in set(self.cfg.hidden_mics):
+            return None
+        from .asr import list_input_devices
+        for idx, dev_name in list_input_devices():
+            if dev_name == name:
+                return idx
+        print(f"[mic] Saqlangan mikrofon topilmadi: {name!r} — tizim default ishlatiladi")
+        return None
+
+    def _open_mic(self, Microphone):
+        """Tanlangan mikrofonni ochadi; ishlamasa tizim default'iga qaytadi.
+
+        Qaytaradi: ochilgan Microphone yoki None (hech narsa ochilmasa).
+        """
+        idx = self._resolve_mic()
+        mic = Microphone(idx)
+        try:
+            mic.start()
+            return mic
+        except Exception as exc:
+            label = self.cfg.mic_name or "default"
+            print(f"[mic] Ochilmadi ({label}): {exc}")
+            if idx is None:
+                return None                       # default ham ishlamadi
+            # Tanlangan qurilma ishlamadi — tizim default'iga qaytamiz
+            print("[mic] Tizim default mikrofoniga qaytildi.")
+            mic = Microphone(None)
+            try:
+                mic.start()
+                return mic
+            except Exception as exc2:
+                print(f"[mic] Default ham ochilmadi: {exc2}")
+                return None
 
     def _is_owner(self, utt) -> bool:
         """Speaker tasdiqlash. allow_all yoqilgan yoki voiceprint yo'q bo'lsa — True."""
@@ -207,15 +246,13 @@ class Aria:
 
     def _next_mic(self) -> str:
         """Keyingi input qurilmasiga o'tadi (faqat yashirilmagan WASAPI mic'lari)."""
-        devices = self._visible_mics()
-        if not devices:
+        names = [n for _, n in self._visible_mics()]
+        if not names:
             return "No microphone found"
-        indices = [i for i, _ in devices]
-        cur = self.cfg.mic_device
-        pos = next((j for j, i in enumerate(indices) if i == cur), -1)
-        nxt = (pos + 1) % len(devices)
-        idx, name = devices[nxt]
-        self.cfg.mic_device = idx
+        cur = self.cfg.mic_name
+        pos = names.index(cur) if cur in names else -1
+        name = names[(pos + 1) % len(names)]
+        self.cfg.mic_name = name
         config_mod.save(self.cfg)
         self._mic_restart.set()
         self._refresh_tray()
@@ -287,28 +324,33 @@ class Aria:
             return setter
 
         def set_custom_wake(icon, item):
-            # DIQQAT: dialog overlay'ning Tk thread'ida quriladi (klaviatura ishlashi
-            # uchun). Yangi tk.Tk() ochish input'ni bloklab qo'yardi.
+            # Dialog overlay'ning Tk thread'ida ASINXRON ochiladi — tray muzlamaydi.
+            # Tasdiqlanganda apply() o'sha Tk thread'ida chaqiriladi.
             if self._overlay is None:
                 return
-            word = self._overlay.ask_text(
+
+            def apply(word):
+                if not word:
+                    return
+                # Faqat harf va bo'shliq (grammatika xavfsizligi), 1–20 belgi
+                word2 = "".join(c for c in word.lower()
+                                if c.isalpha() or c == " ").strip()[:20]
+                if not word2:
+                    return
+                self.cfg.wake_word = word2
+                self.cfg.wake_alts = []
+                config_mod.save(self.cfg)
+                commands.WAKE_WORDS = {word2}
+                if self.recognizer:
+                    self.recognizer.set_wake(word2, [])
+                self._refresh_tray()
+
+            self._overlay.ask_text(
                 self.i18n.t("menu_wake_word"),
                 self.i18n.t("menu_wake_custom_prompt"),
-                initial=self.cfg.wake_word,
+                self.cfg.wake_word,
+                apply,
             )
-            if not word:
-                return
-            # Faqat harf va bo'shliq (grammatika xavfsizligi), 1–20 belgi
-            word = "".join(c for c in word.lower() if c.isalpha() or c == " ").strip()[:20]
-            if not word:
-                return
-            self.cfg.wake_word = word
-            self.cfg.wake_alts = []
-            config_mod.save(self.cfg)
-            commands.WAKE_WORDS = {word}
-            if self.recognizer:
-                self.recognizer.set_wake(word, [])
-            icon.update_menu()
 
         wake_submenu = Menu(
             *[
@@ -325,10 +367,10 @@ class Aria:
         from .asr import list_input_devices
         _all_mics = list_input_devices()
 
-        # --- Mikrofon TANLASH: faqat yashirilmaganlari ---
-        def make_mic_setter(dev_idx):
+        # --- Mikrofon TANLASH: faqat yashirilmaganlari (NOM bo'yicha saqlanadi) ---
+        def make_mic_setter(dev_name):
             def setter(icon, item):
-                self.cfg.mic_device = dev_idx
+                self.cfg.mic_name = dev_name
                 config_mod.save(self.cfg)
                 self._mic_restart.set()
                 icon.update_menu()
@@ -337,14 +379,14 @@ class Aria:
         _mic_items = [
             MenuItem(
                 tr("menu_mic_default"), make_mic_setter(None),
-                checked=lambda i: self.cfg.mic_device is None,
+                checked=lambda i: self.cfg.mic_name is None,
                 radio=True,
             )
         ]
         for _dev_idx, _dev_name in self._visible_mics():
             _mic_items.append(MenuItem(
-                _dev_name[:40], make_mic_setter(_dev_idx),
-                checked=lambda i, di=_dev_idx: self.cfg.mic_device == di,
+                _dev_name[:40], make_mic_setter(_dev_name),
+                checked=lambda i, n=_dev_name: self.cfg.mic_name == n,
                 radio=True,
             ))
         mic_submenu = Menu(*_mic_items)
@@ -359,9 +401,8 @@ class Aria:
                 else:
                     hidden.append(dev_name)
                     # Yashirilgan mic ayni aktiv bo'lsa — tizim default'iga qaytamiz
-                    cur = next((i for i, n in list_input_devices() if n == dev_name), None)
-                    if cur is not None and self.cfg.mic_device == cur:
-                        self.cfg.mic_device = None
+                    if self.cfg.mic_name == dev_name:
+                        self.cfg.mic_name = None
                         self._mic_restart.set()
                 self.cfg.hidden_mics = hidden
                 config_mod.save(self.cfg)

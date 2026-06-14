@@ -26,11 +26,14 @@ class Config:
     wake_word: str = "aria"
     # Fonetik variantlar (model bir xil eshitadigan so'zlar); "aria"→["area"] empirik
     wake_alts: List[str] = field(default_factory=lambda: ["area"])
-    # Mikrofon qurilmasi indeksi (sounddevice); None = tizim default
-    mic_device: Optional[int] = None
-    # Ro'yxatdan yashiriladigan mikrofon NOMLARI (indeks emas — nom qayta
-    # yuklashda barqaror). Yashirilgan mic na tanlovda, na "microphone" sikl
-    # buyrug'ida ko'rinadi — keraksiz/ishlamaydigan qurilmaga tushib qolmaslik uchun.
+    # Tanlangan mikrofon NOMI (indeks emas!). sounddevice indekslari qayta
+    # ishga tushganda siljiydi (ayniqsa virtual audio kabellar bilan) —
+    # shuning uchun nom saqlanadi, indeks har ochishda nomdan topiladi.
+    # None = tizim default mikrofoni.
+    mic_name: Optional[str] = None
+    # Ro'yxatdan yashiriladigan mikrofon NOMLARI. Yashirilgan mic na tanlovda,
+    # na "microphone" sikl buyrug'ida ko'rinadi — keraksiz/ishlamaydigan
+    # qurilmaga (masalan CABLE Output) tushib qolmaslik uchun.
     hidden_mics: List[str] = field(default_factory=list)
     # Ovozli javob (Jarvis effekti)
     voice_feedback: bool = True
@@ -64,13 +67,9 @@ class Config:
             self.wake_alts = []
         self.wake_alts = [str(a).strip().lower() for a in self.wake_alts
                           if a and str(a).strip()]
-        # mic_device: None yoki manfiy bo'lmagan butun son
-        if self.mic_device is not None:
-            try:
-                v = int(self.mic_device)
-                self.mic_device = v if v >= 0 else None
-            except (TypeError, ValueError):
-                self.mic_device = None
+        # mic_name: None yoki bo'sh bo'lmagan matn
+        if self.mic_name is not None:
+            self.mic_name = str(self.mic_name).strip() or None
         # hidden_mics: matn (qurilma nomlari) ro'yxati
         if not isinstance(self.hidden_mics, list):
             self.hidden_mics = []
